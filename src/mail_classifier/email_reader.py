@@ -81,6 +81,9 @@ def read_email_file(file_path):
             file = open(file_path, "r", encoding = encoding)
             text = file.read()
 
+            if text.startswith("\ufeff"):
+                text = text.replace("\ufeff", "", 1)
+
             if text.strip() == "":
                 result["category"] = "technical_quarantine"
                 result["quarantine_reason"] = "empty_file"
