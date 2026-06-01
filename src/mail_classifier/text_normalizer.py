@@ -30,7 +30,7 @@ def normalize_text(text):
     if text is None:
         text = ""
 
-    text = text.lower()
+    text = text.lower().replace("ё", "е")
     words = WORD_PATTERN.findall(text)
 
     normalized_words = []
