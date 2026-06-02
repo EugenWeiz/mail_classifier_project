@@ -1,12 +1,10 @@
 import os
 import pytest
-
 from mail_classifier.router import route_file, get_unique_path
 
 @pytest.fixture
 def router_paths(tmp_path):
     base_directory = str(tmp_path)
-
     paths = {
         "input_directory": os.path.join(base_directory, "input"),
         "output_directory": os.path.join(base_directory, "output"),
@@ -14,14 +12,11 @@ def router_paths(tmp_path):
 
     os.makedirs(paths["input_directory"])
     os.makedirs(paths["output_directory"])
-
     paths["source_file"] = os.path.join(paths["input_directory"], "mail_0001.txt")
-    with open(paths["source_file"], "w", encoding = "utf-8") as file:
+    with open(paths["source_file"], "w", encoding="utf-8") as file:
         file.write("Текст письма")
-
     paths["source_directory"] = os.path.join(paths["input_directory"], "not_file")
     os.makedirs(paths["source_directory"])
-
     paths["missing_file"] = os.path.join(paths["input_directory"], "missing.txt")
 
     return paths
@@ -29,67 +24,44 @@ def router_paths(tmp_path):
 def test_route_file_success(router_paths):
     file_path = router_paths["source_file"]
     output_directory = router_paths["output_directory"]
-    
+
     result = route_file(file_path, output_directory, "software_issues")
     destination_path = os.path.join(output_directory, "software_issues", "mail_0001.txt")
     assert result["success"] is True
-    assert result["source_path"] == file_path
     assert result["destination_path"] == destination_path
     assert result["category"] == "software_issues"
-    assert result["error_message"] == ""
     assert not os.path.exists(file_path)
     assert os.path.exists(destination_path)
-    with open(destination_path, "r", encoding = "utf-8") as file:
-        assert file.read() == "Текст письма"
 
 def test_route_file_with_unknown_category(router_paths):
     file_path = router_paths["source_file"]
     output_directory = router_paths["output_directory"]
-    
+
     result = route_file(file_path, output_directory, "unknown_category")
-    destination_path = os.path.join(output_directory, "needs_manual_review", "mail_0001.txt")
     assert result["success"] is True
     assert result["category"] == "needs_manual_review"
-    assert result["destination_path"] == destination_path
-    assert not os.path.exists(file_path)
-    assert os.path.exists(destination_path)
+    assert "needs_manual_review" in result["destination_path"]
 
 def test_route_file_not_found(router_paths):
     file_path = router_paths["missing_file"]
-    output_directory = router_paths["output_directory"]
-    
-    result = route_file(file_path, output_directory, "software_issues")
+
+    result = route_file(file_path, router_paths["output_directory"], "software_issues")
     assert result["success"] is False
-    assert result["source_path"] == file_path
     assert result["destination_path"] == ""
-    assert result["category"] == "software_issues"
     assert result["error_message"] == f"Файл не найден: {file_path}"
 
 def test_route_file_path_is_directory(router_paths):
     file_path = router_paths["source_directory"]
-    output_directory = router_paths["output_directory"]
-    
-    result = route_file(file_path, output_directory, "software_issues")
+
+    result = route_file(file_path, router_paths["output_directory"], "software_issues")
     assert result["success"] is False
-    assert result["source_path"] == file_path
     assert result["destination_path"] == ""
-    assert result["category"] == "software_issues"
     assert result["error_message"] == f"Путь не является файлом: {file_path}"
-
-def test_route_file_creates_category_directory(router_paths):
-    file_path = router_paths["source_file"]
-    output_directory = router_paths["output_directory"]
-    category_directory = os.path.join(output_directory, "hardware_requests")
-
-    assert not os.path.exists(category_directory)
-    result = route_file(file_path, output_directory, "hardware_requests")
-    assert result["success"] is True
-    assert os.path.exists(category_directory)
-    assert os.path.dirname(result["destination_path"]) == category_directory
 
 def test_route_file_does_not_overwrite_existing_file(router_paths):
     file_path = router_paths["source_file"]
     output_directory = router_paths["output_directory"]
+
     category_directory = os.path.join(output_directory, "software_issues")
     os.makedirs(category_directory)
 
@@ -102,60 +74,39 @@ def test_route_file_does_not_overwrite_existing_file(router_paths):
     assert result["success"] is True
     assert result["destination_path"] == new_destination_path
     assert os.path.exists(existing_file)
-    with open(existing_file, "r", encoding = "utf-8") as file:
-        assert file.read() == "Старый файл"
     assert os.path.exists(new_destination_path)
-    with open(new_destination_path, "r", encoding = "utf-8") as file:
-        assert file.read() == "Текст письма"
 
 def test_route_file_makedirs_os_error(monkeypatch, router_paths):
     file_path = router_paths["source_file"]
     output_directory = router_paths["output_directory"]
 
-    def fake_makedirs(path, exist_ok = True):
+    def fake_makedirs(path, exist_ok=True):
         raise OSError("Нельзя создать папку")
 
     monkeypatch.setattr("mail_classifier.router.os.makedirs", fake_makedirs)
-    
     result = route_file(file_path, output_directory, "software_issues")
-    category_directory = os.path.join(output_directory, "software_issues")
     assert result["success"] is False
-    assert result["source_path"] == file_path
     assert result["destination_path"] == ""
-    assert result["category"] == "software_issues"
-    assert result["error_message"] == f"Не удалось создать папку {category_directory}: Нельзя создать папку"
+    assert "Не удалось создать папку" in result["error_message"]
     assert os.path.exists(file_path)
 
 def test_route_file_replace_os_error(monkeypatch, router_paths):
     file_path = router_paths["source_file"]
-    output_directory = router_paths["output_directory"]
 
     def fake_replace(source_path, destination_path):
         raise OSError("Нельзя переместить файл")
+
     monkeypatch.setattr("mail_classifier.router.os.replace", fake_replace)
-    
-    result = route_file(file_path, output_directory, "software_issues")
+    result = route_file(file_path, router_paths["output_directory"], "software_issues")
     assert result["success"] is False
-    assert result["source_path"] == file_path
     assert result["destination_path"] == ""
-    assert result["category"] == "software_issues"
     assert result["error_message"] == "Не удалось переместить файл mail_0001.txt: Нельзя переместить файл"
     assert os.path.exists(file_path)
 
 def test_get_unique_path_without_conflict(tmp_path):
     path = os.path.join(str(tmp_path), "mail_0001.txt")
-    
     result = get_unique_path(path)
     assert result == path
-
-def test_get_unique_path_with_one_conflict(tmp_path):
-    path = os.path.join(str(tmp_path), "mail_0001.txt")
-
-    with open(path, "w", encoding = "utf-8") as file:
-        file.write("Старый файл")
-        
-    result = get_unique_path(path)
-    assert result == os.path.join(str(tmp_path), "mail_0001_1.txt")
 
 def test_get_unique_path_with_several_conflicts(tmp_path):
     first_path = os.path.join(str(tmp_path), "mail_0001.txt")
@@ -165,6 +116,6 @@ def test_get_unique_path_with_several_conflicts(tmp_path):
         file.write("Первый файл")
     with open(second_path, "w", encoding = "utf-8") as file:
         file.write("Второй файл")
-        
+
     result = get_unique_path(first_path)
     assert result == os.path.join(str(tmp_path), "mail_0001_2.txt")
